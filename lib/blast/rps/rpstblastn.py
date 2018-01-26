@@ -28,7 +28,7 @@ class RpstBlastn:
                       '-outfmt', str(self.outfmt)]
     print("Log", cmd)
     self.parser.reset()
-    blast = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    blast = subprocess.Popen(cmd, stdout=subprocess.PIPE, universal_newlines=True)
     self.parser.parse(blast.stdout)
     if len(self.parser.querymap) > 0:
       return [self.parser.querymap[x].title for x in self.parser.querymap]
