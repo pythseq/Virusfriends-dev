@@ -1,55 +1,141 @@
 #!/bin/bash
-#  setup.sh
-#
-#  Copyright 2017 The University of Sydney
-#  Author: Jan P Buchmann <jan.buchmann@sydney.edu.au>
-#  Description:
-#
-#  Version: 0
+#-------------------------------------------------------------------------------
+#  \file setup.sh
+#  \author Jan P Buchmann <jan.buchmann@sydney.edu.au>
+#  \author Robert Edwards <raedwards@gmail.com>
+#  \author Bhavya Papudeshi<npbhavya13@gmail.com>
+#  \description Install and setup dependencies for VirusFriends
+#  \version 0.0.2
+#-------------------------------------------------------------------------------
+## VirusFriends equivalents of $HOME and $PATH
+export VirusFriends=$PWD
+VF_PATH=""
 
-esearch=$(which esearch)
-efetch=$(which efetch)
-xtract=$(which xtract)
-makeprofiledb=$(which makeprofiledb)
-endovir_pssms='endovir.pn'
+## VirusFriends database directories
+VirusFriends_dbs="$VirusFriends/analysis/dbs"
+mkdir -p $VirusFriends_dbs
 
+## VirusFriends tools
+VirusFriends_tools="$VirusFriends/tools"
+mkdir -p $VirusFriends_tools
 
-export ENDOVIR=$(pwd)
-endovir_dbs="$ENDOVIR/work/analysis/dbs"
-endovir_tools="$ENDOVIR/tools"
-mkdir -p $endovir_tools
-mkdir -p $endovir_dbs
+## Basic OS tools. Maybe a tad too paranoid
+wget=$(which wget)
+make=$(which make)
 
-function setup_magicblast()
+## Global variables for setup
+cpus=$(cat /proc/cpuinfo | grep processor | wc -l)
+((cpus--))
+
+efetch_bin=$(which efetch)
+esearch_bin=$(which esearch)
+xtract_bin=$(which xtract)
+makeblastdb_bin=$(which makeblastdb)
+makeprofiledb_bin=$(which makeprofildb)
+
+## Load libaries
+source $VirusFriends/setup/edirect_setup.sh
+source $VirusFriends/setup/python_setup.sh
+source $VirusFriends/setup/blast_setup.sh
+source $VirusFriends/setup/samtools_setup.sh
+source $VirusFriends/setup/spades_setup.sh
+source $VirusFriends/setup/sratools_setup.sh
+source $VirusFriends/setup/database_setup.sh
+
+## essential functions
+function isInPath()
 {
-  wget ftp://ftp.ncbi.nlm.nih.gov/blast/executables/magicblast/LATEST/ncbi-magicblast-1.3.0-x64-linux.tar.gz -P $endovir_tools -0 "magicblast.tar.gz"
-  tar  -C magicblast -xvf "$endovir_tools/magicblast.tar.gz"
-  export PATH=$PATH:$endovir_tools/magicblast/bin
+ [[ ! -z $(which $1) ]] && return
 }
 
-function make_endovir_cdd()
+# $1: path
+function expand_vfpath()
 {
-
-  echo "" > "$endovir_dbs/$endovir_pssms"
-  local qry="txid10239[Organism:exp] NOT (predicted OR putative)"
-  for i in $($esearch -db  cdd -query "$qry"                      | \
-             $efetch -format docsum                               | \
-             $xtract -pattern DocumentSummary -element Accession  | \
-             grep -v cl)
-    do
-      echo $i".smp" >> "$endovir_dbs/$endovir_pssms"
-    done
-
-  local cdd_ftp='ftp://ftp.ncbi.nlm.nih.gov/pub/mmdb/cdd/cdd.tar.gz'
-  wget $cdd_ftp -O - | tar -C "$endovir_dbs/" -xzvT "$endovir_dbs/$endovir_pssms"
-  cd $endovir_dbs
-  $makeprofiledb -title "endovir"                    \
-                 -in "$endovir_dbs/$endovir_pssms"   \
-                 -out "$endovir_dbs/endovir_cdd"     \
-                 -threshold 9.82                     \
-                 -scale 100                          \
-                 -dbtype rps                         \
-                 -index true
+  VF_PATH=$VF_PATH:$1
+}
+function reset_wd()
+{
+  cd $VirusFriends
+}
+function finish_up()
+{
+  if [ ! -z $VF_PATH ]; then
+    VF_PATH=$(echo $VF_PATH | sed -e 's/^://')
+    echo "You need to append $VF_PATH to your PATH environment variable."
+    echo "I recommend doing this by adding the following line to ~/.bashrc"
+    echo -e "\texport PATH=\$PATH:$VF_PATH"
+    echo "but you may also want to add this to a different location so I didn't set it to you"
+  fi
 }
 
-make_endovir_cdd
+# $1 address $2 install_dir $3 compression: gzip|bzip
+function wget_tool()
+{
+  local tar_cmd="tar -C $2 --strip-components=1 "
+  if [[ "$3" == "gzip" ]]
+    then
+      tar_cmd+="-xz"
+  fi
+
+  if [[ "$3" == "bzip" ]]
+    then
+      tar_cmd+="-xj"
+  fi
+  tar_cmd+="vf -"
+  (set -x; $wget $1 -O - | $tar_cmd)
+}
+
+function usage()
+{
+  echo "
+ `basename $0` [-LV]
+-L: List the software that will be installed. No changes will be made.
+-I: Install the software
+
+This installer will test for several pieces of software in your path and optionally install those that are missing.
+
+If you provide the -L option, it will just list the software that will be installed.
+
+If you provide the -I option, it will download appropriate software and install it. The default installation
+directory is $VirusFriends_tools, but you can edit this install script to change that if you would prefer.
+
+Databases will also be installed in $VirusFriends_dbs.
+"
+}
+
+TESTONLY=0
+INSTALL=0
+
+if [ "$1" == "-L" ]; then
+  TESTONLY=1;
+  echo "Only listing software to be installed"
+elif [ "$1" == "-I" ]; then
+  INSTALL=1;
+  echo "Installing software"
+else
+  usage
+  exit 0
+fi
+
+
+echo "Will use $cpus CPU(s) for setup where possible"
+## Go/no go poll
+# Installing Python is a major PITA, can't get it to work properly.
+#export PYTHONPATH=""
+#export PYTHONHOME=""
+#setup_python
+setup_edirect
+setup_blast
+setup_magicblast
+setup_spades
+setup_sratools
+setup_samtools
+setup_cdd_database
+setup_viral_refseq_database
+
+
+if [ $TESTONLY == 1 ]
+  then
+    echo "VirusFriends test finished"
+fi
+finish_up
